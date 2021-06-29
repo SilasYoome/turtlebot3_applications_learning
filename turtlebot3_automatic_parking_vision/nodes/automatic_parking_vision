@@ -93,10 +93,18 @@ class AutomaticParkingVision():
 		  #	獲得機器人的三軸，前往fnGet2DRobotPose查看內容
         pos_x, pos_y, theta = self.fnGet2DRobotPose(robot_odom_msg)
 
+        #   成員變數三軸數值=回傳三軸數值
         self.robot_2d_pose_x = pos_x
         self.robot_2d_pose_y = pos_y
         self.robot_2d_theta = theta
 
+        '''
+            some times you want control yaw(theta) but when you transform quarternion to euler 
+            the angles are between pi and -pi and you have one break point in pi and it's bother 
+            controller for this reason in this part of code:
+
+            這段程式碼是在處理，將四位數轉換成歐拉角，並將角度維持在pi與-pi之間，這將會在pi之間產生一個break point(中斷點)
+        '''
         if (self.robot_2d_theta - self.previous_robot_2d_theta) > 5.:
             d_theta = (self.robot_2d_theta - self.previous_robot_2d_theta) - 2 * math.pi
         elif (self.robot_2d_theta - self.previous_robot_2d_theta) < -5.:
@@ -108,39 +116,56 @@ class AutomaticParkingVision():
         self.previous_robot_2d_theta = self.robot_2d_theta
 
         self.robot_2d_theta = self.total_robot_2d_theta
+        '''if we have jump in angle (this jump is bigger than 2 *pi(-pi to pi)) Compute d_theta and add the d_theta to total_robot_2d_theta'''
 
     def cbGetMarkerOdom(self, markers_odom_msg):
+        #   market的三軸
         for marker_odom_msg in markers_odom_msg.markers:
+            #   確認market的標頭
             if marker_odom_msg.id == MARKER_ID_DETECTION:
+                #   修改旗標，is_marker_pose_received為確認是否收到marker數值
                 if self.is_marker_pose_received == False:
                     self.is_marker_pose_received = True
-
+                #   獲得機器人的三軸，前往fnGet2DRMarkerPose查看內容
                 pos_x, pos_y, theta = self.fnGet2DMarkerPose(marker_odom_msg)
 
+                #   將拿取到的數值放入成員變數中
                 self.marker_2d_pose_x = pos_x
                 self.marker_2d_pose_y = pos_y
                 self.marker_2d_theta = theta - math.pi
 
     def fnParking(self):
+        #   開頭的宣告self.current_parking_sequence = self.ParkingSequence.searching_parking_lot.value
         if self.current_parking_sequence == self.ParkingSequence.searching_parking_lot.value:
-            self.is_sequence_finished = self.fnSeqSearchingGoal()
+
+            #   self.is_sequence_finished預設是false
+            #   如果marker一直沒有找到，則is_sequence_finished會是預設的false，並且機器人會一直旋轉來尋找marker，如果找到則會停下，並將is_sequence_finished變成為fnSeqSearchingGoal回傳的true
+            self.is_sequence_finished = self.fnSeqSearchingGoal()   
             
-            if self.is_sequence_finished == True:
-                print ("Finished 1")
+            if self.is_sequence_finished == True:   #   sequence結束 ---> 這代表searching_parking_lot結束(用意在找到marker)
+                print ("Finished 1")    #   print Finished 1
+
+                #   變數self.current_parking_sequence = self.ParkingSequence.changing_direction.value，用來前往下一個else if
                 self.current_parking_sequence = self.ParkingSequence.changing_direction.value
+                #   把旗標is_sequence_finished變為false
                 self.is_sequence_finished = False
 
-        elif self.current_parking_sequence == self.ParkingSequence.changing_direction.value:
-            print ("changing_direction")
-            self.is_sequence_finished = self.fnSeqChangingDirection()
+        #   在searching_parking_lot中變數self.current_parking_sequence = self.ParkingSequence.changing_dirction.value
+        elif self.current_parking_sequence == self.ParkingSequence.changing_direction.value:    #   註:direction是方向的意思，changing direction是改變方向
+            print ("changing_direction")    #   print changing direction
+            self.is_sequence_finished = self.fnSeqChangingDirection()   #   旋轉機器人角度atan2(x,y)，直到atan2(x,y)(絕對值)小於0.001才會回傳true，不然都回傳false
             
-            if self.is_sequence_finished == True:
-                print ("Finished 2")
-                self.current_parking_sequence = self.ParkingSequence.moving_nearby_parking_lot.value
+            if self.is_sequence_finished == True:   #   sequence結束 ---> 這代表fnSeqChangingDirection結束(用意在機器人旋轉角度到 |atan2(marker_x,marker_y)| < 0.001，此時機器人為停止狀態)
+                print ("Finished 2")    #   print Finished  2
+
+                #   變數self.current_parking_sequence = self.ParkingSequence.moving_nearby_parking_lot.value，用來前往下一個else if
+                self.current_parking_sequence = self.ParkingSequence.moving_nearby_parking_lot.value    
+                #   把旗標is_sequence_finished變成false
                 self.is_sequence_finished = False
 
+        #   在changing_direction中變數self.current_parking_sequence = self.ParkingSequence.moving_nearby_parking_lot.value
         elif self.current_parking_sequence == self.ParkingSequence.moving_nearby_parking_lot.value:
-            print ("moving_nearby_parking_lot")
+            print ("moving_nearby_parking_lot") #   print moving_nearby_parking_lot
             self.is_sequence_finished = self.fnSeqMovingNearbyParkingLot()
             
             if self.is_sequence_finished == True:
@@ -163,37 +188,46 @@ class AutomaticParkingVision():
             rospy.on_shutdown(self.fnShutDown)
 
     def fnSeqSearchingGoal(self):
-        if self.is_marker_pose_received is False:
-            self.desired_angle_turn = -0.6
-            self.fnTurn(self.desired_angle_turn)
-        else:
-            self.fnStop()
-            return True
+        #   如果沒有看到marker，就開始旋轉到找到marker為止
+        if self.is_marker_pose_received is False:   #   如果收到的marker的參數，is_marker_pose_received會是true
+            self.desired_angle_turn = -0.6  #   期望的(需要的)角度
+            self.fnTurn(self.desired_angle_turn)    #   旋轉角度傳入
 
+        #   找到marker了(is_marker_pose_received == true)
+        else:
+            self.fnStop()   #   停止
+            return True     #   回傳true
+
+    #   改變方向
     def fnSeqChangingDirection(self):
+        #   要轉的角度為 -1 * atan2(x,y)，xy是marker的xy，atan2是tan的變質，atan2(x,y)是取直線(x,y)與正x軸之間的角度
         desired_angle_turn = -1. *  math.atan2(self.marker_2d_pose_y - 0, self.marker_2d_pose_x - 0)
 
         # rospy.loginfo("desired_angle_turn %f self.marker_2d_pose_x %f self.marker_2d_pose_y %f"
         # , desired_angle_turn, self.marker_2d_pose_x, self.marker_2d_pose_y)
 
-        self.fnTurn(desired_angle_turn)
+        self.fnTurn(desired_angle_turn) #   旋轉atan2得出的角度值
         
-        if abs(desired_angle_turn) < 0.01:
-            self.fnStop()
-            return True
+        if abs(desired_angle_turn) < 0.01:  #   一直旋轉到atan2(x,y)(絕對值)小於0.01時
+            self.fnStop()   #   機器人停止
+            return True     #   回傳true
         else:
-            return False
+            return False    #   atan2(x,y)(絕對值)未小於0.01，回傳false
 
     def fnSeqMovingNearbyParkingLot(self):
+        #   預設self.current_nearby_sequence = self.NearbySequence.initial_turn.value
         if self.current_nearby_sequence == self.NearbySequence.initial_turn.value:
-            if self.is_triggered == False:
-                self.is_triggered = True
+            if self.is_triggered == False:  #   預設self.is_triggered = false
+                self.is_triggered = True    #   self.is_triggered = true，表示觸發了(應該是指fnSeqMovingNearbyParkingLot啟動)
+
+                #   宣告五個變數紀錄初始的機器人與marker座標
                 self.initial_robot_pose_theta = self.robot_2d_theta
                 self.initial_robot_pose_x = self.robot_2d_pose_x
                 self.initial_robot_pose_y = self.robot_2d_pose_y
                 self.initial_marker_pose_theta = self.marker_2d_theta
                 self.initial_marker_pose_x = self.marker_2d_pose_x
 
+            #   計算要旋轉的角度，用marker的theta計算
             if self.initial_marker_pose_theta < 0.0:
                 desired_angle_turn = (math.pi / 2.0) + self.initial_marker_pose_theta - (self.robot_2d_theta - self.initial_robot_pose_theta)
             elif self.initial_marker_pose_theta > 0.0:
@@ -202,8 +236,10 @@ class AutomaticParkingVision():
             # rospy.loginfo("desired_angle_turn %f self.initial_marker_pose_theta %f self.robot_2d_theta %f self.initial_robot_pose_theta %f"
             # , desired_angle_turn, self.initial_marker_pose_theta, self.robot_2d_theta, self.initial_robot_pose_theta)
 
+            #   計算結果再 * -1
             desired_angle_turn = -1. * desired_angle_turn
 
+            #   旋轉得出後的角度
             self.fnTurn(desired_angle_turn)
 
             if abs(desired_angle_turn) < 0.05:
@@ -250,13 +286,14 @@ class AutomaticParkingVision():
         desired_angle_turn = math.atan2(self.marker_2d_pose_y - 0, self.marker_2d_pose_x - 0)
         self.fnTrackMarker(-desired_angle_turn)
         
-        print self.marker_2d_pose_x
+        print (self.marker_2d_pose_x)
         if abs(self.marker_2d_pose_x) < 0.22:
             self.fnStop()
             return True
         else:
             return False
 
+    #   停止
     def fnStop(self):
         twist = Twist()
         twist.linear.x = 0
@@ -267,10 +304,11 @@ class AutomaticParkingVision():
         twist.angular.z = 0
         self.pub_cmd_vel.publish(twist)
 
+    #   旋轉控制，傳入要旋轉的角度
     def fnTurn(self, theta):
         Kp = 0.8
 
-        angular_z = Kp * theta
+        angular_z = Kp * theta  #   傳入的角速度*kp後傳入cmd_vel，做方向與速度控制
 
         twist = Twist()
         twist.linear.x = 0
@@ -306,18 +344,23 @@ class AutomaticParkingVision():
         self.pub_cmd_vel.publish(twist)      
 
     def fnGet2DRobotPose(self, robot_odom_msg):
-		
+        #   quaternion為四元數，用來表示物體的旋轉數值
         quaternion = (robot_odom_msg.pose.pose.orientation.x, robot_odom_msg.pose.pose.orientation.y, robot_odom_msg.pose.pose.orientation.z, robot_odom_msg.pose.pose.orientation.w)
+        #   將四元數轉換成歐拉角，quaternion_from_euler(roll, pitch, yaw)，theta只要yaw，所以只等於[2]
         theta = tf.transformations.euler_from_quaternion(quaternion)[2]
 
+        #   負角計算，由負轉正 : theta + 2pi
         if theta < 0:
             theta = theta + np.pi * 2
+        #   角度超過360度，轉為360度之內 : theta - 2pi
         if theta > np.pi * 2:
             theta = theta - np.pi * 2
 
+        #   x=x,y=y
         pos_x = robot_odom_msg.pose.pose.position.x
         pos_y = robot_odom_msg.pose.pose.position.y
 
+        #   回傳三軸資訊
         return pos_x, pos_y, theta
 
     def fnGet2DMarkerPose(self, marker_odom_msg):
