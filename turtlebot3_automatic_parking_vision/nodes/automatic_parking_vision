@@ -36,6 +36,9 @@ class AutomaticParkingVision():
     def __init__(self):   # self類似於c++中的this，在class建立時會將自身傳入並命名為self
 
           #   AutomaticParkingVision(self)成員sud_odom_robot為訂閱了/odom node的成員
+			 #	  Python Subscriber寫法: rospy.Subscriber(topic_name,msg_class,callback_function,queue_size)
+			 #	  Odometry是官方的一個用於/odom的msg傳輸格式
+			 #   訂閱的話題若有消息進入則執行self.cbGetRobotOdom
         self.sub_odom_robot = rospy.Subscriber('/odom', Odometry, self.cbGetRobotOdom, queue_size = 1)
 
          #   AutomaticParkingVision(self)成員sud_odom_robot為訂閱了/ar_pose_marker node的成員
@@ -70,22 +73,24 @@ class AutomaticParkingVision():
 
         self.is_sequence_finished = False   #   序列完成時
 
-        self.is_odom_received = False   #   odom收到旗標
-        self.is_marker_pose_received = False    #   marker的姿態收到旗標
+        self.is_odom_received = False   #   odom收到 旗標
+        self.is_marker_pose_received = False    #   marker的姿態收到 旗標
 
         loop_rate = rospy.Rate(10) # 10hz   #   以10hz頻率循環
         while not rospy.is_shutdown():
-            if self.is_odom_received is True:
-                self.fnParking()
+            if self.is_odom_received is True:   #   確定收到odom值
+                self.fnParking()    #   執行fnParking()
             
             loop_rate.sleep()
 
         rospy.on_shutdown(self.fnShutDown)
 
-    def cbGetRobotOdom(self, robot_odom_msg):
+    def  cbGetRobotOdom(self, robot_odom_msg):
+		 	#	修改旗標，is_odom_received為確認是否收到odom數值
         if self.is_odom_received == False:
             self.is_odom_received = True 
         
+		  #	獲得機器人的三軸，前往fnGet2DRobotPose查看內容
         pos_x, pos_y, theta = self.fnGet2DRobotPose(robot_odom_msg)
 
         self.robot_2d_pose_x = pos_x
@@ -301,6 +306,7 @@ class AutomaticParkingVision():
         self.pub_cmd_vel.publish(twist)      
 
     def fnGet2DRobotPose(self, robot_odom_msg):
+		
         quaternion = (robot_odom_msg.pose.pose.orientation.x, robot_odom_msg.pose.pose.orientation.y, robot_odom_msg.pose.pose.orientation.z, robot_odom_msg.pose.pose.orientation.w)
         theta = tf.transformations.euler_from_quaternion(quaternion)[2]
 
